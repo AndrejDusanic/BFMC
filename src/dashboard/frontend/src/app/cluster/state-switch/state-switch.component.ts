@@ -1,32 +1,9 @@
+// src/app/cluster/state-switch/state-switch.component.ts
+
 // Copyright (c) 2019, Bosch Engineering Center Cluj and BFMC orginazers
 // All rights reserved.
 
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-
-//  1. Redistributions of source code must retain the above copyright notice, this
-//    list of conditions and the following disclaimer.
-
-//  2. Redistributions in binary form must reproduce the above copyright notice,
-//     this list of conditions and the following disclaimer in the documentation
-//     and/or other materials provided with the distribution.
-
-// 3. Neither the name of the copyright holder nor the names of its
-//    contributors may be used to endorse or promote products derived from
-//     this software without specific prior written permission.
-
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-import { Component, HostListener } from '@angular/core';
+import { Component, HostListener, OnInit } from '@angular/core';
 import { WebSocketService } from '../../webSocket/web-socket.service';
 import { NgFor, NgIf } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
@@ -37,13 +14,17 @@ import { ClusterService } from '../cluster.service';
   standalone: true,
   imports: [NgFor, NgIf, MatIconModule],
   templateUrl: './state-switch.component.html',
-  styleUrl: './state-switch.component.css'
+  styleUrls: ['./state-switch.component.css']
 })
-export class StateSwitchComponent {
+export class StateSwitchComponent implements OnInit {
   public states: string[] = ['stop', 'manual', 'legacy', 'auto'];
   public currentStateIndex: number = 0;
 
   public isMobile: boolean = false;
+
+  // Promenljive za prikaz auto kontrolnih vrednosti
+  public autoSteer: number = 0;
+  public autoSpeed: number = 0;
 
   private activeKey: string | null = null;
 
@@ -62,25 +43,41 @@ export class StateSwitchComponent {
   private maxSteer: number = 25;
   private minSteer: number = -25;
 
-  constructor(private  webSocketService: WebSocketService, 
-    private clusterService: ClusterService
-  ) { }
+  constructor(private webSocketService: WebSocketService, 
+              private clusterService: ClusterService) { }
 
   ngOnInit() {
     this.clusterService.isMobileDriving$.subscribe(isMobileDriving => {
       this.isMobile = isMobileDriving;
     });
+    // Pretplata na sve neobrađene događaje sa servera i filtriranje AutoControl poruka
+    this.webSocketService.receiveUnhandledEvents().subscribe(event => {
+      if (event.channel === "AutoControl") {
+        try {
+          const control = JSON.parse(event.data);
+          this.autoSteer = control.steer;
+          this.autoSpeed = control.speed;
+          // Poziv metode applyAutoControl – sada implementiramo ovu metodu
+          this.applyAutoControl(control.steer, control.speed);
+        } catch (err) {
+          console.error("Greška pri parsiranju AutoControl poruke:", err);
+        }
+      }
+    });
+  }
+
+  // Dodata metoda applyAutoControl koja obrađuje primljene auto komande.
+  // Ovde možete implementirati potrebnu logiku – trenutno samo logujemo vrednosti.
+  applyAutoControl(steer: number, speed: number): void {
+    console.log(`Primljena auto komanda - Steer: ${steer}, Speed: ${speed}`);
+    // Možete dodati dodatnu logiku za upravljanje, ažuriranje UI ili slanje naredbi
   }
 
   @HostListener('window:keydown', ['$event'])
   handleKeyDown(event: KeyboardEvent) {
-    if (this.currentState == 'manual') {
-
-      if (this.activeKey === event.key)
-        return;
-    
+    if (this.currentState === 'manual') {
+      if (this.activeKey === event.key) return;
       this.activeKey = event.key;
-
       switch(event.key) {
         case 'w':
           this.increaseSpeed();
@@ -90,14 +87,14 @@ export class StateSwitchComponent {
           break;
         case 'a':
           if (!this.isSteering) { 
-            this.isSteering = true
+            this.isSteering = true;
             this.stopDecreasingSteering();
             this.startSteeringLeft();
           }
           break;
         case 'd':
           if (!this.isSteering) { 
-            this.isSteering = true
+            this.isSteering = true;
             this.stopDecreasingSteering();
             this.startSteeringRight();  
           }
@@ -118,14 +115,21 @@ export class StateSwitchComponent {
   }
 
   setState(index: number) {
-    if (this.currentState == 'manual' && this.currentState != this.states[index]) {
+    if (this.currentState === 'manual' && this.currentState !== this.states[index]) {
       this.speedReset();
       this.steerReset();
     }
 
     this.currentStateIndex = index;    
     this.clusterService.updateDrivingMode(this.states[index]);
-    this.webSocketService.sendMessageToFlask(`{"Name": "DrivingMode", "Value": "${this.states[index]}"}`);   
+    // Slanje komande za DrivingMode
+    this.webSocketService.sendMessageToFlask(`{"Name": "DrivingMode", "Value": "${this.states[index]}"}`);
+    // Dodatno, ako je stanje "auto", šaljemo i AutoMode komandu
+    if (this.states[index] === 'auto') {
+      this.webSocketService.sendMessageToFlask(`{"Name": "AutoMode", "Value": "true"}`);
+    } else {
+      this.webSocketService.sendMessageToFlask(`{"Name": "AutoMode", "Value": "false"}`);
+    }
   }
 
   get currentState() {
@@ -139,11 +143,10 @@ export class StateSwitchComponent {
   }
 
   public onButtonPress(direction: string): void { 
-    if (direction == "left") {
+    if (direction === "left") {
       this.stopDecreasingSteering();
       this.startSteeringLeft();
-    }
-    else if (direction == "right") {
+    } else if (direction === "right") {
       this.stopDecreasingSteering();
       this.startSteeringRight();
     }
@@ -156,91 +159,73 @@ export class StateSwitchComponent {
 
   public increaseSpeed(): void {
     this.speed += this.speedIncrement;
-
     if (this.speed > this.maxSpeed) {
       this.speed = this.maxSpeed;
     }
-
-    this.webSocketService.sendMessageToFlask(`{"Name": "SpeedMotor", "Value": "${this.speed*10}"}`);   
+    this.webSocketService.sendMessageToFlask(`{"Name": "SpeedMotor", "Value": "${this.speed * 10}"}`);
   }
 
   public decreaseSpeed(): void {
     this.speed -= this.speedIncrement;
-
     if (this.speed < this.minSpeed) {
       this.speed = this.minSpeed;
     }
-
-    this.webSocketService.sendMessageToFlask(`{"Name": "SpeedMotor", "Value": "${this.speed*10}"}`);   
+    this.webSocketService.sendMessageToFlask(`{"Name": "SpeedMotor", "Value": "${this.speed * 10}"}`);
   }
 
   private startSteeringRight() {
     this.steerInterval = setInterval(() => {
-
       this.steer += this.steerIncrement;
-
       if (this.steer > this.maxSteer) {
         this.steer = this.maxSteer;
       }
-      
-      if (this.lastSteer != this.maxSteer) { 
-        this.webSocketService.sendMessageToFlask(`{"Name": "SteerMotor", "Value": "${this.steer*10}"}`);  
+      if (this.lastSteer !== this.maxSteer) { 
+        this.webSocketService.sendMessageToFlask(`{"Name": "SteerMotor", "Value": "${this.steer * 10}"}`);
       }
- 
       this.lastSteer = this.steer;
     }, 50);
   }
-   
+    
   private startSteeringLeft() {
     this.steerInterval = setInterval(() => {
-
       this.steer -= this.steerIncrement;
-
       if (this.steer < this.minSteer) {
         this.steer = this.minSteer;
       }
-
-      if (this.lastSteer != this.minSteer) { 
-        this.webSocketService.sendMessageToFlask(`{"Name": "SteerMotor", "Value": "${this.steer*10}"}`);
+      if (this.lastSteer !== this.minSteer) { 
+        this.webSocketService.sendMessageToFlask(`{"Name": "SteerMotor", "Value": "${this.steer * 10}"}`);
       }
-        
       this.lastSteer = this.steer;
     }, 50);
   }
 
   private startDecreasingSteer() { 
-    this.steerDecreaseInterval = setInterval(() => {
-      if (this.steer == 0 || this.isSteering)
-        return;
-    
+    setInterval(() => {
+      if (this.steer === 0 || this.isSteering) return;
       if (this.steer < 0) {
         this.steer += this.steerDecrement;
-    
-        if (this.steer > 0) { 
+        if (this.steer > 0) {
           this.steer = 0;
         }
       }
-    
       if (this.steer > 0) {
         this.steer -= this.steerDecrement;
-    
-        if (this.steer < 0) { 
+        if (this.steer < 0) {
           this.steer = 0;
         }
       }
-    
-      this.webSocketService.sendMessageToFlask(`{"Name": "SteerMotor", "Value": "${this.steer*10}"}`); 
-    }, 100)
+      this.webSocketService.sendMessageToFlask(`{"Name": "SteerMotor", "Value": "${this.steer * 10}"}`);
+    }, 100);
   }
 
   private speedReset(): void { 
     this.speed = 0;
-    this.webSocketService.sendMessageToFlask(`{"Name": "SpeedMotor", "Value": "${this.speed*10}"}`);   
+    this.webSocketService.sendMessageToFlask(`{"Name": "SpeedMotor", "Value": "${this.speed * 10}"}`);
   }
 
   private steerReset(): void { 
     this.steer = 0;
-    this.webSocketService.sendMessageToFlask(`{"Name": "SteerMotor", "Value": "${this.steer*10}"}`);   
+    this.webSocketService.sendMessageToFlask(`{"Name": "SteerMotor", "Value": "${this.steer * 10}"}`);
   }
 
   private stopSteering() {
@@ -252,11 +237,12 @@ export class StateSwitchComponent {
   }
 
   private stopDecreasingSteering() {
-    if (this.steerDecreaseInterval) { 
+    // Implementacija za zaustavljanje intervala, ako je potrebno
+if (this.steerDecreaseInterval) { 
       clearInterval(this.steerDecreaseInterval);
       this.steerDecreaseInterval = null;
-    }
-  }
+    }  
+}
 
   getSliderWidth(): string {
     return `calc(100% / ${this.states.length})`;
@@ -266,19 +252,15 @@ export class StateSwitchComponent {
     if (this.currentState === 'legacy') {
       return '#2b8fd1';
     }
-
     if (this.currentState === 'manual') {
       return '#f0ad4e';
     }
-
     if (this.currentState === 'stop') {
       return '#d9534f';
     }
-
     if (this.currentState === 'auto') {
       return '#5cb85c';
     }
-
     return '#2b8fd1';
   }
 }

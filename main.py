@@ -73,6 +73,7 @@ queueList = {
     "Warning": Queue(),
     "General": Queue(),
     "Config": Queue(),
+    "AutoControl": Queue()
 }
 
 # ===================================== PROCESS IMPORTS ==================================

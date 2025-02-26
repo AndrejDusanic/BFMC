@@ -30,21 +30,15 @@ from .pid import pid_controller, auto_mode, set_auto_mode
 
 # --- Dummy poruka za AutoMode ---
 # messageHandlerSubscriber očekuje objekat koji ima atribut Owner.
-# Pomoćna klasa koja enkapsulira vrednost
-class DummyAttr:
-    def __init__(self, val):
-        self.value = val
-
 class AutoMode:
-    # Svi atributi (Queue, Owner, msgID) su instanca DummyAttr s odgovarajućom vrednošću
-    Queue = DummyAttr("AutoControl")
-    Owner = DummyAttr("AutoControl")
-    msgID = DummyAttr("AutoControl")
-    msgType = DummyAttr("AutoControl")
+    class Owner:
+        value = "AutoMode"
+    class msgID:
+        value = "AutoControl"
 # ----------------------------------
 
 class FrameBuffer:
-    """ Jednostavni buffer sa kapacitetom 1 koji drži frame i timestamp preuzimanja."""
+    """Jednostavni buffer sa kapacitetom 1 koji drži frame i timestamp preuzimanja."""
     def __init__(self):
         self.frame = None
         self.timestamp = 0
@@ -82,7 +76,7 @@ class threadCamera(ThreadWithStop):
         self.mainCameraSender = messageHandlerSender(self.queuesList, mainCamera)
         self.serialCameraSender = messageHandlerSender(self.queuesList, serialCamera)
         # Sender za automatsko upravljanje (PID izlaz)
-        self.autoControlSender = messageHandlerSender(self.queuesList, AutoMode)
+        self.autoControlSender = messageHandlerSender(self.queuesList, "AutoControl")
 
         self.subscribe()
         self._init_camera()
@@ -237,23 +231,19 @@ class threadCamera(ThreadWithStop):
 
     def processing_loop(self):
         """Nit koja čeka frame u bufferu, obrađuje ga, meri kašnjenje i, ako je snimanje aktivno, zapisuje ga u video."""
-        USE_FIXED_COMMAND = True  # Postavite na True da testirate fiksnu komandu; False da se koristi PID izlaz
         while self._running and self._processing_running.is_set():
             # Provera poruka za AutoMode (npr. "true"/"false")
             if self.autoModeSubscriber.isDataInPipe():
                 message = self.autoModeSubscriber.receive()
-                self.logger.info("AutoMode message received: %s", message)
                 if message is not None:
-                    try:
-                        msg_str = str(message).lower()
-                        if msg_str == "true":
-                            set_auto_mode(True)
-                            self.logger.info("Auto mode set to True")
-                        else:
-                            set_auto_mode(False)
-                            self.logger.info("Auto mode set to False")
-                    except Exception as e:
-                        self.logger.error("Error processing AutoMode message: %s", e)
+                    msg_str=str(message).lower()
+                    if msg_str == "true":
+                        set_auto_mode(True)
+                        self.logger.info("Auto mode set to True")
+                    else:
+                        set_auto_mode(False)
+                        self.logger.info("Auto mode set to False"
+           )
 
             try:
                 recordRecv = self.recordSubscriber.receive()
@@ -288,7 +278,9 @@ class threadCamera(ThreadWithStop):
             proc_start = time.time()
             processed_frame, control = self.process_frame(frame)
             proc_end = time.time()
-
+            capture_delay = proc_start - capture_time
+            processing_delay = proc_end - proc_start
+            total_delay = proc_end - capture_time
             if processed_frame is None:
                 self.logger.error("Obrada frame-a nije uspjela.")
                 continue
@@ -299,17 +291,15 @@ class threadCamera(ThreadWithStop):
             self.mainCameraSender.send(encodedImageData)
             self.serialCameraSender.send(encodedImageData)
 
-            # Slanje automatske upravljačke komande (PID izlaz) ka front-endu
+            # Ako je dobijena automatska upravljačka komanda, šaljemo poruku u formatu:
+            # { "channel": "AutoControl", "data": { "steer": vrednost, "speed": vrednost } }
             if control is not None:
-                if USE_FIXED_COMMAND:
-                    # Koristimo fiksnu komandu: upravljanje sa nulom na volanu i brzinom 50
-                    control = {"steer": 0, "speed": 50}
-                    self.logger.info("Using fixed command: %s", control)
-                else:
-                    self.logger.info("Computed auto command: %s", control)
-                auto_control_message = {"channel": "AutoControl", "data": control}
+                auto_control_message = {
+                    "channel": "AutoControl",
+                    "data": control
+                }
                 self.autoControlSender.send(json.dumps(auto_control_message))
-            # Bez dodatnog spavanja
+            # Bez dodatnog spavan ja
 
     def run(self):
         """Glavna metoda koja pokreće acquisition i processing niti."""

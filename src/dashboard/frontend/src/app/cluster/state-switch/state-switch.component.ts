@@ -9,6 +9,39 @@ import { NgFor, NgIf } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { ClusterService } from '../cluster.service';
 
+//====ODAVDE PA ISPOD==========
+
+let car_speed: number = 0; 
+let car_steering_angle: number = 0;
+
+
+import { io, Socket } from 'socket.io-client';
+
+// Connect to your Flask server (make sure the URL and port match your server settings)
+const socket: Socket = io('http://172.20.10.3:5001');
+
+socket.on('connect', () => {
+  // console.log('Connected to the Flask server');
+  // Optionally send a message after connecting
+  //socket.emit('message', { message: 'Hello from TypeScript client!' });
+});
+
+socket.on('message_about_speed', (data: any) => {
+  //console.log('Message from server:', data);
+  //socket.emit('message', {message: 'Primio sam status sa servera da je primio moju prvu poruku!'});
+  car_speed = Number(data);
+  socket.emit('message', {message: data})
+});
+
+socket.on('message_about_steering_angle', (data: any) => {
+  //console.log('Message from server:', data);
+  //socket.emit('message', {message: 'Primio sam status sa servera da je primio moju prvu poruku!'});
+  car_steering_angle = Number(data);
+  socket.emit('message', {message: data})
+});
+
+//====DO OVDE=====
+
 @Component({
   selector: 'app-state-switch',
   standalone: true,

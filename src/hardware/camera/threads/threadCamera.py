@@ -25,9 +25,34 @@ from src.utils.messages.messageHandlerSender import messageHandlerSender
 from src.utils.messages.messageHandlerSubscriber import messageHandlerSubscriber
 from src.templates.threadwithstop import ThreadWithStop
 
-# Uvoz PID kontrolera iz pid.py (koristi relativni import)
-from .pid import pid_controller, auto_mode, set_auto_mode
+# KOPIRANO SVE IZ pid.py
+class PIDController:
+    def __init__(self, kp=1.0, ki=0.0, kd=0.1):
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
+        self.integral = 0.0
+        self.last_error = 0.0
 
+    def update(self, error, dt):
+        """Izračunava PID izlaz na osnovu trenutne greške i proteklog vremena dt."""
+        self.integral += error * dt
+        derivative = (error - self.last_error) / dt if dt > 0 else 0.0
+        output = self.kp * error + self.ki * self.integral + self.kd * derivative
+        self.last_error = error
+        return output
+
+# Globalni objekat PID kontrolera
+pid_controller = PIDController()
+
+# Globalna zastavica da li je auto režim aktivan
+auto_mode = True
+
+def set_auto_mode(mode: bool):
+    """Postavlja globalni auto_mode – kada je True, PID se koristi za automatsko upravljanje."""
+    global auto_mode
+    auto_mode = mode
+# OVDE SE ZAVRSAVA SVE STO JE BILO U pid.py
 # --- Dummy poruka za AutoMode ---
 # messageHandlerSubscriber očekuje objekat koji ima atribut Owner.
 # Pomoćna klasa koja enkapsulira vrednost
@@ -113,6 +138,7 @@ class threadCamera(ThreadWithStop):
         """Podešavanje kamera parametara (brightness, contrast) na osnovu primljenih poruka."""
         if self.brightnessSubscriber.isDataInPipe():
             message = self.brightnessSubscriber.receive()
+
             if self.debugger:
                 self.logger.info(f"Brightness poruka: {message}")
             self.camera.set_controls({
@@ -214,7 +240,7 @@ class threadCamera(ThreadWithStop):
             # Za brzinu možemo postaviti fiksnu vrednost, npr. 20
             control_output = {"steer": steering, "speed": 20}
         # Dodato logovanje za dijagnostiku
-            self.logger.info("Auto Mode: %s, Error: %.2f, PID Value: %.2f, Control Command: %s", auto_mode, error, pid_value, control_output)
+            #self.logger.info("Auto Mode: %s, Error: %.2f, PID Value: %.2f, Control Command: %s", auto_mode, error, pid_value, control_output)
             # Prikazujemo informacije na slici za debagovanje
             cv2.putText(output_frame, f"Error: {error:.2f}", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
@@ -242,7 +268,7 @@ class threadCamera(ThreadWithStop):
             # Provera poruka za AutoMode (npr. "true"/"false")
             if self.autoModeSubscriber.isDataInPipe():
                 message = self.autoModeSubscriber.receive()
-                self.logger.info("AutoMode message received: %s", message)
+                # self.logger.info("AutoMode message received: %s", message)
                 if message is not None:
                     try:
                         msg_str = str(message).lower()
@@ -304,7 +330,7 @@ class threadCamera(ThreadWithStop):
                 if USE_FIXED_COMMAND:
                     # Koristimo fiksnu komandu: upravljanje sa nulom na volanu i brzinom 50
                     control = {"steer": 0, "speed": 50}
-                    self.logger.info("Using fixed command: %s", control)
+                    # self.logger.info("Using fixed command: %s", control)
                 else:
                     self.logger.info("Computed auto command: %s", control)
                 auto_control_message = {"channel": "AutoControl", "data": control}

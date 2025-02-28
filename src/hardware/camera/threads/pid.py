@@ -2,6 +2,7 @@
 
 from flask import Flask
 from flask_socketio import SocketIO
+#import time
 #-------------------------------
 class PIDController:
     def __init__(self, kp=1.0, ki=0.0, kd=0.1):
@@ -47,16 +48,24 @@ def handle_connect():
     print("Klijent se povezao!")
     # Emitujemo događaj 'after connect' kao što Angular očekuje
     socketio.emit('after connect', {"message": "Povezano!"})
-    socketio.emit('message_about_speed', {"message_about_speed": "20"})
-    socketio.emit('message_about_steering_angle', {"message_about_steering_angle": "15"})
+    socketio.emit('message_about_speed', {"speed": "20"})
+    socketio.emit('message_about_steering_angle', {"steer": "20"})
+#    time.sleep(50)    
+#    socketio.emit('message_about_speed', {"speed": "-20"})
+#    socketio.emit('message_about_steering_angle', {"steer": "-20"})
+
 
 # Ova funkcija prima poruke sa kanala 'message'
 @socketio.on('message')
 def handle_message(data):
-    print("Primljena poruka u kojoj se nalaze vrednosti zadate brzine i ugla skretanja:", data)
+    print(data)
     # Ovde možete obraditi primljenu poruku, npr. postaviti AutoMode ili izvršiti drugu logiku.
     # Kao odgovor možemo poslati poruku nazad
     #socketio.send({"status": "poruka primljena"})
+
+@socketio.on("debbuging_message")
+def handle_debbuging_message(data):
+    print(data)
 
 if __name__ == '__main__':
     # Pokrećemo server na portu 5001

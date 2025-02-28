@@ -1,3 +1,4 @@
+
 // src/app/cluster/state-switch/state-switch.component.ts
 
 // Copyright (c) 2019, Bosch Engineering Center Cluj and BFMC orginazers
@@ -10,6 +11,10 @@ import { MatIconModule } from '@angular/material/icon';
 import { ClusterService } from '../cluster.service';
 
 //====ODAVDE PA ISPOD==========
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 let car_speed: number = 0; 
 let car_steering_angle: number = 0;
@@ -26,18 +31,18 @@ socket.on('connect', () => {
   //socket.emit('message', { message: 'Hello from TypeScript client!' });
 });
 
-socket.on('message_about_speed', (data: any) => {
+socket.on('message_about_speed', (data: { speed: string }) => {
   //console.log('Message from server:', data);
   //socket.emit('message', {message: 'Primio sam status sa servera da je primio moju prvu poruku!'});
-  car_speed = Number(data);
-  socket.emit('message', {message: data})
+  car_speed = Number(data.speed);
+  socket.emit('message', {message: car_speed})
 });
 
-socket.on('message_about_steering_angle', (data: any) => {
+socket.on('message_about_steering_angle', (data: { steer: string }) => {
   //console.log('Message from server:', data);
   //socket.emit('message', {message: 'Primio sam status sa servera da je primio moju prvu poruku!'});
-  car_steering_angle = Number(data);
-  socket.emit('message', {message: data})
+  car_steering_angle = Number(data.steer);
+  socket.emit('message', {message: car_steering_angle})
 });
 
 //====DO OVDE=====
@@ -76,6 +81,26 @@ export class StateSwitchComponent implements OnInit {
   private maxSteer: number = 25;
   private minSteer: number = -25;
 
+ 
+async function sendMessages() {
+  // First for loop: Send SpeedMotor messages.
+  for (let i = 0; i < 1; i++) {
+    this.webSocketService.sendMessageToFlask(
+      `{"Name": "SpeedMotor", "Value": "${this.speed * 10}"}`
+    );
+  }
+
+  // Add a delay before starting the next loop.
+  await delay(100); // Delay for 100 milliseconds (adjust as needed)
+
+  // Second for loop: Send SteerMotor messages.
+  for (let i = 0; i < 3; i++) {
+    this.webSocketService.sendMessageToFlask(
+      `{"Name": "SteerMotor", "Value": "${this.steer * 10}"}`
+    );
+  }
+}
+
   constructor(private webSocketService: WebSocketService, 
               private clusterService: ClusterService) { }
 
@@ -99,6 +124,7 @@ export class StateSwitchComponent implements OnInit {
     });
   }
 
+    //this.steer = isNaN(car_steering_angle) ? 0 : car_steering_angle;
   // Dodata metoda applyAutoControl koja obrađuje primljene auto komande.
   // Ovde možete implementirati potrebnu logiku – trenutno samo logujemo vrednosti.
   applyAutoControl(steer: number, speed: number): void {
@@ -114,9 +140,18 @@ export class StateSwitchComponent implements OnInit {
       switch(event.key) {
         case 'w':
           this.increaseSpeed();
+          //this.activateAutoControl();
+
+          //if (!this.isSteering) {
+          //  this.isSteering = true;
+          //  this.stopDecreasingSteering();
+          //  this.startSteeringRight();
+          //}
+
           break;
         case 's':
           this.decreaseSpeed();
+          //this.deactivateAutoControl();
           break;
         case 'a':
           if (!this.isSteering) { 
@@ -147,6 +182,28 @@ export class StateSwitchComponent implements OnInit {
     }
   }
 
+
+activateAutoControl(): void {
+    this.speed=0
+    this.steer=0
+
+    this.speed = isNaN(car_speed) ? 0 : car_speed;
+    this.steer = isNaN(car_steering_angle) ? 0 : car_steering_angle;
+
+    sendMessages();    
+
+     socket.emit('debbuging_message', {debbuging_message: 'Evo me izvrsio se activateAutoControl!'})
+}
+
+deactivateAutoControl(): void {
+  this.speed=0
+  this.steer=0
+
+  this.webSocketService.sendMessageToFlask(`{"Name": "SpeedMotor", "Value": "${this.speed*10}"}`);
+  this.webSocketService.sendMessageToFlask(`{"Name": "SteerMotor", "Value": "${this.steer*10}"}`);
+}
+
+
   setState(index: number) {
     if (this.currentState === 'manual' && this.currentState !== this.states[index]) {
       this.speedReset();
@@ -160,8 +217,10 @@ export class StateSwitchComponent implements OnInit {
     // Dodatno, ako je stanje "auto", šaljemo i AutoMode komandu
     if (this.states[index] === 'auto') {
       this.webSocketService.sendMessageToFlask(`{"Name": "AutoMode", "Value": "true"}`);
+      this.activateAutoControl();
     } else {
       this.webSocketService.sendMessageToFlask(`{"Name": "AutoMode", "Value": "false"}`);
+      this.deactivateAutoControl();
     }
   }
 
@@ -209,6 +268,9 @@ export class StateSwitchComponent implements OnInit {
   private startSteeringRight() {
     this.steerInterval = setInterval(() => {
       this.steer += this.steerIncrement;
+
+      //this.steer = isNaN(car_steering_angle) ? 0 : car_steering_angle;
+
       if (this.steer > this.maxSteer) {
         this.steer = this.maxSteer;
       }
@@ -222,6 +284,9 @@ export class StateSwitchComponent implements OnInit {
   private startSteeringLeft() {
     this.steerInterval = setInterval(() => {
       this.steer -= this.steerIncrement;
+
+      //this.steer = isNaN(car_steering_angle) ? 0 : -1*car_steering_angle;
+
       if (this.steer < this.minSteer) {
         this.steer = this.minSteer;
       }

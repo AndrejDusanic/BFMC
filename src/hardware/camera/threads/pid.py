@@ -2,7 +2,8 @@
 
 from flask import Flask
 from flask_socketio import SocketIO
-#import time
+import time
+
 #-------------------------------
 class PIDController:
     def __init__(self, kp=1.0, ki=0.0, kd=0.1):
@@ -42,14 +43,42 @@ def index():
 # Dozvoljavamo CORS kako bi Angular aplikacija sa druge adrese mogla da se poveže
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+speed = 0
+steer = 0
+
+def send_periodic_updates():
+    global speed, steer
+    while True:
+        speed = speed + 1
+        steer = steer + 1
+
+        if speed>30:
+            speed=0
+        if steer>20:
+            steer=0
+
+        socketio.emit('message_about_speed', {"speed": str(speed)})
+        socketio.emit('message_about_steering_angle', {"steer": str(speed)})
+        socketio.sleep(1)  # Adjust the interval as needed (e.g., every 1 second)
+
+
 # Kada se klijent poveže, obaveštavamo ga (i server)
 @socketio.on('connect')
 def handle_connect():
     print("Klijent se povezao!")
     # Emitujemo događaj 'after connect' kao što Angular očekuje
-    socketio.emit('after connect', {"message": "Povezano!"})
-    socketio.emit('message_about_speed', {"speed": "20"})
-    socketio.emit('message_about_steering_angle', {"steer": "20"})
+    #socketio.emit('after connect', {"message": "Povezano!"})
+    socketio.emit('message_about_speed', {"speed": "0"})
+    socketio.emit('message_about_steering_angle', {"steer": "0"})
+
+   # Start background task (only once, when the first client connects)
+    socketio.start_background_task(send_periodic_updates)
+
+#@socketio.on('second')
+#def handle_second(data):
+#    socketio.emit('message_about_speed', {"speed": "-20"})
+#    socketio.emit('message_about_steering_angle', {"steer": "-20"})
+
 #    time.sleep(50)    
 #    socketio.emit('message_about_speed', {"speed": "-20"})
 #    socketio.emit('message_about_steering_angle', {"steer": "-20"})

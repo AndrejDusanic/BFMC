@@ -32,10 +32,6 @@ socket.on('message_about_speed', (data: { speed: string }) => {
   //socket.emit('message', {message: 'Primio sam status sa servera da je primio moju prvu poruku!'});
   car_speed = Number(data.speed);
   socket.emit('message', {message: car_speed})
- // setTimeout(() => {
-  //  socket.emit('second', { second: 'Salji drugu komandu!' });
-   // }, 40000); // 40 seconds = 40000 milliseconds
-
 });
 
 socket.on('message_about_steering_angle', (data: { steer: string }) => {
@@ -171,23 +167,51 @@ activateAutoControl(): void {
     this.speed = isNaN(car_speed) ? 0 : car_speed;
     this.steer = isNaN(car_steering_angle) ? 0 : car_steering_angle;
 
-  // Send SteerMotor command immediately
+// Send the first SteerMotor message immediately.
+this.webSocketService.sendMessageToFlask(
+  `{"Name": "SteerMotor", "Value": "${this.steer * 10}"}`
+);
+
+// 2nd SteerMotor message after 50ms.
+setTimeout(() => {
   this.webSocketService.sendMessageToFlask(
     `{"Name": "SteerMotor", "Value": "${this.steer * 10}"}`
   );
 
-  // Wait 50ms before sending SpeedMotor command
+  // 3rd SteerMotor message after another 50ms.
   setTimeout(() => {
     this.webSocketService.sendMessageToFlask(
-      `{"Name": "SpeedMotor", "Value": "${this.speed * 10}"}`
+      `{"Name": "SteerMotor", "Value": "${this.steer * 10}"}`
     );
 
-    // Wait another 50ms before stopping (nothing happens after this)
+    // 4th SteerMotor message after another 50ms.
     setTimeout(() => {
-      console.log("Completed Steer and Speed commands.");
+      this.webSocketService.sendMessageToFlask(
+      `{"Name": "SteerMotor", "Value": "${this.steer * 10}"}`
+      );
+
+      // After 120ms from the last SteerMotor message, start sending SpeedMotor messages.
+      setTimeout(() => {
+         First SpeedMotor message.
+        this.webSocketService.sendMessageToFlask(
+        `{"Name": "SpeedMotor", "Value": "${this.speed * 10}"}`
+        );
+
+        // After 100ms, send the second SpeedMotor message.
+        setTimeout(() => {
+          this.webSocketService.sendMessageToFlask(
+            `{"Name": "SpeedMotor", "Value": "${this.speed * 10}"}`
+          );
+        }, 100);
+
+      }, 120);
+
     }, 50);
 
   }, 50);
+
+}, 50);
+
     // socket.emit('debbuging_message', {debbuging_message: 'Evo me izvrsio se activateAutoControl!'})
 }
 
@@ -213,12 +237,7 @@ deactivateAutoControl(): void {
     // Dodatno, ako je stanje "auto", šaljemo i AutoMode komandu
     if (this.states[index] === 'auto') {
       this.webSocketService.sendMessageToFlask(`{"Name": "AutoMode", "Value": "true"}`);
-      setInterval(() => {
-        this.activateAutoControl();
-      }, 400); // Runs every 300ms
-
-      //this.activateAutoControl();
-     // setInterval(this.activateAutoControl,1000);
+      this.activateAutoControl();
     } else {
       this.webSocketService.sendMessageToFlask(`{"Name": "AutoMode", "Value": "false"}`);
       this.deactivateAutoControl();

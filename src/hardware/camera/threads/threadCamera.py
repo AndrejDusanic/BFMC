@@ -25,7 +25,7 @@ from src.utils.messages.messageHandlerSender import messageHandlerSender
 from src.utils.messages.messageHandlerSubscriber import messageHandlerSubscriber
 from src.templates.threadwithstop import ThreadWithStop
 
-from .pid import auto_mode, pid_controller, set_auto_mode
+from .upravljanje import auto_mode, pid_controller, set_auto_mode
 
 # --- Dummy poruka za AutoMode ---
 # messageHandlerSubscriber očekuje objekat koji ima atribut Owner.

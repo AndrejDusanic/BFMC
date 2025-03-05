@@ -3,9 +3,7 @@
 from flask import Flask
 from flask_socketio import SocketIO
 import time
-
 #-------------------------------
-#from .threadCamera import process_frame
 #------------------------------
 app = Flask(__name__)
 
@@ -24,17 +22,23 @@ steer = 0
 def send_periodic_updates():
     global speed, steer
     while True:
-        speed = speed + 1
-        steer = steer + 1
+        #speed = shared_data.speed
+        #print("shared speed",shared_data.speed)
+        print("speed",speed)
+        #steer = shared_data.steer
+        #print("shared steer",shared_data.steer)
+        print("steer",steer)
 
-        if speed>30:
-            speed=0
-        if steer>20:
-            steer=0
+
+        #if speed>30:
+            #speed=0
+        #if steer>20:
+            #steer=0
 
         socketio.emit('message_about_speed', {"speed": str(speed)})
         socketio.emit('message_about_steering_angle', {"steer": str(speed)})
         socketio.sleep(1)  # Adjust the interval as needed (e.g., every 1 second)
+
 
 
 # Kada se klijent poveže, obaveštavamo ga (i server)
@@ -58,6 +62,9 @@ def handle_connect():
 #    socketio.emit('message_about_speed', {"speed": "-20"})
 #    socketio.emit('message_about_steering_angle', {"steer": "-20"})
 
+@socketio.on('control_output')
+def handle_control_output(data):
+    print("Primljen control_output:", data)
 
 # Ova funkcija prima poruke sa kanala 'message'
 @socketio.on('message')

@@ -13,6 +13,7 @@ import torch
 import os
 import json
 
+
 from src.utils.messages.allMessages import (
     mainCamera,
     serialCamera,
@@ -26,6 +27,18 @@ from src.utils.messages.messageHandlerSubscriber import messageHandlerSubscriber
 from src.templates.threadwithstop import ThreadWithStop
 
 from .upravljanje import auto_mode, pid_controller, set_auto_mode
+
+import socketio
+sio = socketio.Client()
+
+@sio.event
+def connect():
+    print("Povezano na PID server.")
+
+@sio.event
+def disconnect():
+    print("Diskonektovano sa PID server.")
+
 
 # --- Dummy poruka za AutoMode ---
 # messageHandlerSubscriber očekuje objekat koji ima atribut Owner.
@@ -94,6 +107,24 @@ class threadCamera(ThreadWithStop):
         self._acquisition_running.set()
         self._processing_running = threading.Event()
         self._processing_running.set()
+
+        self.start_time = time.time()
+        self.first_emit_done = False
+
+        self.start_socketio_client()
+
+    def start_socketio_client(self):
+        def client_loop():
+            while True:
+                try:
+                    # Poveži se na server – uveri se da je adresa tačna
+                    sio.connect("http://172.20.10.3:5001")
+                    sio.wait()  # Ova funkcija blokira i održava konekciju aktivnom
+                except Exception as e:
+                    self.logger.error("Socket.IO connection error: %s", e)
+                    time.sleep(5)  # Pokušaj ponovo nakon 5 sekundi
+        threading.Thread(target=client_loop, daemon=True).start()
+
 
     def subscribe(self):
         """Pretplate na poruke (record, brightness, contrast, auto mode)."""
@@ -213,6 +244,13 @@ class threadCamera(ThreadWithStop):
             steering = max(min(pid_value, 25), -25)
             # Za brzinu možemo postaviti fiksnu vrednost, npr. 20
             control_output = {"steer": steering, "speed": 20}
+            #if control_output:
+                #shared_data.update_values(control_output["speed"], control_output["steer"])
+
+                #shared_data.speed = control_output["speed"]
+                #print("share speed",shared_data.speed)
+                #shared_data.steer = control_output["steer"]
+                #print("share steer",shared_data.steer)
         # Dodato logovanje za dijagnostiku
             #self.logger.info("Auto Mode: %s, Error: %.2f, PID Value: %.2f, Control Command: %s", auto_mode, error, pid_value, control_output)
             # Prikazujemo informacije na slici za debagovanje
@@ -220,6 +258,27 @@ class threadCamera(ThreadWithStop):
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
             cv2.putText(output_frame, f"PID: {pid_value:.2f}", (10, 60),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+
+        if control_output is not None:
+            if not self.first_emit_done:
+                elapsed = time.time() - self.start_time
+                if elapsed < 20:
+                    wait_time = 20 - elapsed
+                    self.logger.info(f"Čekam {wait_time:.2f} sekundi pre prvog slanja control_output")
+                    time.sleep(wait_time)
+                self.first_emit_done = True
+
+
+            # Ako je konekcija uspostavljena, emituj poruku
+            if sio.connected:
+                try:
+                    sio.emit('control_output', control_output)
+                except Exception as e:
+                    self.logger.error("Greška pri slanju control_output: %s", e)
+            else:
+                self.logger.error("Socket.IO nije konektovan, preskačem slanje control_output")
+
+
         return output_frame, control_output
 
     def capture_loop(self):

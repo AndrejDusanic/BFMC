@@ -171,113 +171,168 @@ class threadCamera(ThreadWithStop):
     def process_frame(self, frame):
         """
         Obrada ulaznog frame‑a s fokusom na ROI definisanom trapezom.
-        Ako je auto režim aktivan, računa se greška između centra slike i
-        prosečnog centra detektovanih linija, a zatim se PID kontroler poziva
-        da izračuna korektivni izlaz.
+        Implementira detekciju saobraćajnih traka koristeći Canny edge detection i Hough transform.
+        Računa grešku između centra slike i prosečnog centra detektovanih linija za PID kontroler.
         """
         if frame is None:
             self.logger.error("Primljen main frame je None.")
             return None
 
+        # Resize frame (kao u originalnoj implementaciji)
         resized_frame = cv2.resize(frame, (1024, 540))
         height, width = resized_frame.shape[:2]
-        roi_pts = np.array([
-            [0, height],
-            [width, height],
-            [int(2 * width / 3), int(2 * height / 3)],
-            [int(width / 3), int(2 * height / 3)]
-        ], np.int32)
-        roi_pts[:, 0] = np.clip(roi_pts[:, 0], 0, width - 1)
-        roi_pts[:, 1] = np.clip(roi_pts[:, 1], 0, height - 1)
-        x, y, w, h = cv2.boundingRect(roi_pts)
-        if w == 0 or h == 0:
-            self.logger.error("Degenerisana ROI oblast. Preskačem frame.")
-            return resized_frame
-        roi_img = resized_frame[y:y+h, x:x+w].copy()
-        roi_pts_adjusted = roi_pts - [x, y]
-        mask = np.zeros((h, w), dtype=np.uint8)
-        cv2.fillPoly(mask, [roi_pts_adjusted], 255)
-        self.logger.debug(f"ROI shape: {roi_img.shape}, mask shape: {mask.shape}")
-        try:
-            roi_only = cv2.bitwise_and(roi_img, roi_img, mask=mask)
-        except Exception as e:
-            self.logger.error(f"cv2.bitwise_and greška: {e}")
-            return resized_frame
 
-        roi_gamma = self.adjust_gamma(roi_only, gamma=1.2)
-        gray = cv2.cvtColor(roi_gamma, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.blur(gray, (3, 3))
-        edges = cv2.Canny(blurred, 50, 150)
-        lines = cv2.HoughLinesP(edges, 1, np.pi/180, threshold=50, minLineLength=50, maxLineGap=20)
-        roi_processed = np.copy(roi_img)
+        # Preprocessing slike (slično kao u prvom kodu)
+        # Convert to grayscale
+        gray_image = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2GRAY)
+    
+        # Remove noise with Gaussian blur
+        denoised_image = cv2.GaussianBlur(gray_image, (3, 3), 0)
+    
+        # Canny edge detection
+        edges_image = cv2.Canny(denoised_image, 200, 400)
+
+        # Region of Interest - definisanje trapezoidne oblasti
+        mask = np.zeros_like(edges_image)
+        vertices = np.array([[
+            (width * 0.10, height * 0.70),
+            (width * 0.90, height * 0.70),
+            (width * 0.95, height * 0.95),
+            (width * 0.05, height * 0.95),
+        ]], dtype=np.int32)
+
+        cv2.fillPoly(mask, vertices, 255)
+        roi_image = cv2.bitwise_and(edges_image, mask)
+
+        # Hough Transform za detekciju linija
+        lines = cv2.HoughLinesP(roi_image, 1, np.pi/180, 
+                                 threshold=10, 
+                                 minLineLength=15, 
+                                 maxLineGap=15)
+
+        lane_lines = []
+        lines_kept = []
+
         if lines is not None:
-            for line in lines:
-                x1, y1, x2, y2 = line[0]
-                cv2.line(roi_processed, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        else:
-            self.logger.debug("Nije pronađena nijedna linija u ROI-ju.")
-        roi_final = roi_img.copy()
-        roi_final[mask == 255] = roi_processed[mask == 255]
-        output_frame = np.copy(resized_frame)
-        output_frame[y:y+h, x:x+w] = roi_final
-        cv2.polylines(output_frame, [roi_pts], isClosed=True, color=(0, 0, 255), thickness=2)
+            left_fit, right_fit = [], []
+        
+            # Definisanje granica za levu i desnu stranu
+            boundary_left = 0.35
+            boundary_right = 0.4
+            left_region_boundary = width * (1 - boundary_left)
+            right_region_boundary = width * boundary_right
 
+            for line_segment in lines:
+                for x1, y1, x2, y2 in line_segment:
+                    if x1 == x2:  # skip vertical lines
+                        continue
+
+                    fit = np.polyfit((x1, x2), (y1, y2), 1)
+                    slope, intercept = fit[0], fit[1]
+
+                    if abs(slope) < 0.1:  # skip horizontal lines
+                        continue
+
+                    lines_kept.append(line_segment)
+                
+                    if slope < 0:
+                        if x1 < left_region_boundary and x2 < left_region_boundary:
+                            left_fit.append((slope, intercept))
+                    else:
+                        if x1 > right_region_boundary and x2 > right_region_boundary:
+                            right_fit.append((slope, intercept))
+
+            # Funkcija za kreiranje krajnjih tačaka linija
+            def make_points(frame, line):
+                height, width, _ = frame.shape
+                slope, intercept = line
+                y1 = height  # bottom of the frame
+                y2 = int(y1 * 0.5)  # make points from bottom of the frame up
+
+                # bound the coordinates within the frame
+                x1 = max(-width, min(2 * width, int((y1 - intercept) / slope)))
+                x2 = max(-width, min(2 * width, int((y2 - intercept) / slope)))
+
+                return [[x1, y1, x2, y2]]
+
+            # Prosečne linije
+            if left_fit:
+                left_fit_average = np.average(left_fit, axis=0)
+                lane_lines.append(make_points(resized_frame, left_fit_average))
+
+            if right_fit:
+                right_fit_average = np.average(right_fit, axis=0)
+                lane_lines.append(make_points(resized_frame, right_fit_average))
+
+            # Crtanje detektovanih linija
+            output_frame = resized_frame.copy()
+            for line in lane_lines:
+                for x1, y1, x2, y2 in line:
+                    cv2.line(output_frame, (x1, y1), (x2, y2), (0, 255, 255), 2)
+
+        else:
+            output_frame = resized_frame.copy()
+
+        # Postojeća auto mode logika
         control_output = None
-        # Ako je auto režim aktivan, obračunavamo grešku i koristimo PID kontroler
         if auto_mode:
             error = 0.0
-            if lines is not None and len(lines) > 0:
+            if lane_lines:
                 centers = []
-                for line in lines:
-                    x1, y1, x2, y2 = line[0]
-                    center_line = (x1 + x2) / 2.0
-                    centers.append(center_line)
-                avg_center = sum(centers) / len(centers)
-                image_center = width / 2.0
-                # Greška – pozitivna vrednost znači da se sredina linija pomera ulevo od centra slike
-                error = image_center - avg_center
+                for line in lane_lines:
+                    for x1, y1, x2, y2 in line:
+                        center_line = (x1 + x2) / 2.0
+                        centers.append(center_line)
+            
+                if centers:
+                    avg_center = sum(centers) / len(centers)
+                    print("avg",avg_center)
+                    
+                    image_center = width / 2.0
+                    print("centar",image_center)
+                    # Greška – pozitivna vrednost znači da se sredina linija pomera ulevo od centra slike
+                    error = image_center - avg_center
 
-            # Pretpostavljamo fiksno dt (može se kasnije zameniti merom vremena)
-            dt = 0.05
-            pid_value = pid_controller.update(error, dt)
-            # Ograničavamo PID izlaz na opseg upravljača (npr. između -25 i 25)
-            steering = max(min(pid_value, 25), -25)
-            # Za brzinu možemo postaviti fiksnu vrednost, npr. 20
-            control_output = {"steer": steering, "speed": 20}
-            #if control_output:
-                #shared_data.update_values(control_output["speed"], control_output["steer"])
+                    # Pretpostavljamo fiksno dt (može se kasnije zameniti merom vremena)
+                    dt = 0.01
+                    counter=0
+                    
+                    while true:
+                        counter = counter + 1
+                        if counter==10:
+                            pid_value = pid_controller.update(error, dt)
+                            counter = 0
+                            print("PIDDDDD",pid_value)
+                    
+                            # Ograničavamo PID izlaz na opseg upravljača (npr. između -25 i 25)
+                            steering = max(min(pid_value, 25), -25)
+                            # Za brzinu možemo postaviti fiksnu vrednost, npr. 20
+                            control_output = {"steer": steering, "speed": 20}
 
-                #shared_data.speed = control_output["speed"]
-                #print("share speed",shared_data.speed)
-                #shared_data.steer = control_output["steer"]
-                #print("share steer",shared_data.steer)
-        # Dodato logovanje za dijagnostiku
-            #self.logger.info("Auto Mode: %s, Error: %.2f, PID Value: %.2f, Control Command: %s", auto_mode, error, pid_value, control_output)
-            # Prikazujemo informacije na slici za debagovanje
-            cv2.putText(output_frame, f"Error: {error:.2f}", (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-            cv2.putText(output_frame, f"PID: {pid_value:.2f}", (10, 60),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+                            # Dodavanje teksta za debagovanje
+                            cv2.putText(output_frame, f"Error: {error:.2f}", (10, 30),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+                            cv2.putText(output_frame, f"PID: {pid_value:.2f}", (10, 60),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
-        if control_output is not None:
-            if not self.first_emit_done:
-                elapsed = time.time() - self.start_time
-                if elapsed < 20:
-                    wait_time = 20 - elapsed
-                    self.logger.info(f"Čekam {wait_time:.2f} sekundi pre prvog slanja control_output")
-                    time.sleep(wait_time)
-                self.first_emit_done = True
-
-
-            # Ako je konekcija uspostavljena, emituj poruku
-            if sio.connected:
-                try:
-                    sio.emit('control_output', control_output)
-                except Exception as e:
-                    self.logger.error("Greška pri slanju control_output: %s", e)
-            else:
-                self.logger.error("Socket.IO nije konektovan, preskačem slanje control_output")
-
+                            if control_output is not None:
+                                if not self.first_emit_done:
+                                    elapsed = time.time() - self.start_time
+                                    if elapsed < 20:
+                                        wait_time = 20 - elapsed
+                                        self.logger.info(f"Čekam {wait_time:.2f} sekundi pre prvog slanja control_output")
+                                        time.sleep(wait_time)
+                                        self.first_emit_done = True
+                            if sio.connected:
+                                try:
+                                    sio.emit('control_output', control_output)
+                                except Exception as e:
+                                    self.logger.error("Greška pri slanju control_output: %s", e)
+                            # Nakon uspešnog slanja izlazimo iz petlje
+                            else:
+                                self.logger.error("Socket.IO nije konektovan, preskačem slanje")
+                        else:
+                            continue
 
         return output_frame, control_output
 

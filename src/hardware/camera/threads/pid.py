@@ -23,22 +23,17 @@ steer = 0
 def send_periodic_updates():
     global speed, steer
     while True:
-        #speed = shared_data.speed
-        #print("shared speed",shared_data.speed)
         print("speed",speed)
-        #steer = shared_data.steer
-        #print("shared steer",shared_data.steer)
         print("steer",steer)
 
-
-        if speed>30:
-            speed=0
-        if steer>20:
-            steer=0
+        #if speed>30:
+            #speed=0
+        #if steer>20:
+            #steer=0
 
         socketio.emit('message_about_speed', {"speed": str(speed)})
-        socketio.emit('message_about_steering_angle', {"steer": str(speed)})
-        socketio.sleep(1)  # Adjust the interval as needed (e.g., every 1 second)
+        socketio.emit('message_about_steering_angle', {"steer": str(steer)})
+        socketio.sleep(0.1)  # Adjust the interval as needed (e.g., every 1 second)
 
 
 
@@ -54,14 +49,6 @@ def handle_connect():
    # Start background task (only once, when the first client connects)
     socketio.start_background_task(send_periodic_updates)
 
-#@socketio.on('second')
-#def handle_second(data):
-#    socketio.emit('message_about_speed', {"speed": "-20"})
-#    socketio.emit('message_about_steering_angle', {"steer": "-20"})
-
-#    time.sleep(50)    
-#    socketio.emit('message_about_speed', {"speed": "-20"})
-#    socketio.emit('message_about_steering_angle', {"steer": "-20"})
 
 @socketio.on('control_output')
 def handle_control_output(data):
@@ -82,9 +69,6 @@ def handle_control_output(data):
 @socketio.on('message')
 def handle_message(data):
     print(data)
-    # Ovde možete obraditi primljenu poruku, npr. postaviti AutoMode ili izvršiti drugu logiku.
-    # Kao odgovor možemo poslati poruku nazad
-    #socketio.send({"status": "poruka primljena"})
 
 @socketio.on("debbuging_message")
 def handle_debbuging_message(data):

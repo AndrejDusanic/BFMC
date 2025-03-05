@@ -4,6 +4,7 @@ from flask import Flask
 from flask_socketio import SocketIO
 import time
 #-------------------------------
+import json
 #------------------------------
 app = Flask(__name__)
 
@@ -30,10 +31,10 @@ def send_periodic_updates():
         print("steer",steer)
 
 
-        #if speed>30:
-            #speed=0
-        #if steer>20:
-            #steer=0
+        if speed>30:
+            speed=0
+        if steer>20:
+            steer=0
 
         socketio.emit('message_about_speed', {"speed": str(speed)})
         socketio.emit('message_about_steering_angle', {"steer": str(speed)})
@@ -64,7 +65,18 @@ def handle_connect():
 
 @socketio.on('control_output')
 def handle_control_output(data):
-    print("Primljen control_output:", data)
+    global speed, steer
+    if isinstance(data, dict):
+        steer=data.get("steer",steer)
+        speed=data.get("speed",speed)
+    else:
+        try:
+            d = json.loads(data)
+            steer = d.get("steer", steer)
+            speed = d.get("speed", speed)
+        except Exception as e:
+            print("Greška pri parsiranju control_output:", e)
+    print("Primljen control_output:", {"steer": steer, "speed": speed})
 
 # Ova funkcija prima poruke sa kanala 'message'
 @socketio.on('message')

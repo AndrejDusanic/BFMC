@@ -297,42 +297,37 @@ class threadCamera(ThreadWithStop):
                     dt = 0.01
                     counter=0
                     
-                    while true:
-                        counter = counter + 1
-                        if counter==10:
-                            pid_value = pid_controller.update(error, dt)
-                            counter = 0
-                            print("PIDDDDD",pid_value)
+                    pid_value = pid_controller.update(error, dt)
+                    print("PIDDDDD",pid_value)
                     
-                            # Ograničavamo PID izlaz na opseg upravljača (npr. između -25 i 25)
-                            steering = max(min(pid_value, 25), -25)
-                            # Za brzinu možemo postaviti fiksnu vrednost, npr. 20
-                            control_output = {"steer": steering, "speed": 20}
+                    # Ograničavamo PID izlaz na opseg upravljača (npr. između -25 i 25)
+                    steering = max(min(pid_value, 25), -25)
+                    # Za brzinu možemo postaviti fiksnu vrednost, npr. 20
+                    control_output = {"steer": steering, "speed": 20}
 
-                            # Dodavanje teksta za debagovanje
-                            cv2.putText(output_frame, f"Error: {error:.2f}", (10, 30),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-                            cv2.putText(output_frame, f"PID: {pid_value:.2f}", (10, 60),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+                    # Dodavanje teksta za debagovanje
+                    cv2.putText(output_frame, f"Error: {error:.2f}", (10, 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+                    cv2.putText(output_frame, f"PID: {pid_value:.2f}", (10, 60),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+          
 
-                            if control_output is not None:
-                                if not self.first_emit_done:
-                                    elapsed = time.time() - self.start_time
-                                    if elapsed < 20:
-                                        wait_time = 20 - elapsed
-                                        self.logger.info(f"Čekam {wait_time:.2f} sekundi pre prvog slanja control_output")
-                                        time.sleep(wait_time)
-                                        self.first_emit_done = True
-                            if sio.connected:
-                                try:
-                                    sio.emit('control_output', control_output)
-                                except Exception as e:
-                                    self.logger.error("Greška pri slanju control_output: %s", e)
-                            # Nakon uspešnog slanja izlazimo iz petlje
-                            else:
-                                self.logger.error("Socket.IO nije konektovan, preskačem slanje")
-                        else:
-                            continue
+                    if control_output is not None:
+                        if not self.first_emit_done:
+                            elapsed = time.time() - self.start_time
+                            if elapsed < 20:
+                                wait_time = 20 - elapsed
+                                self.logger.info(f"Čekam {wait_time:.2f} sekundi pre prvog slanja control_output")
+                                time.sleep(wait_time)
+                                self.first_emit_done = True
+                    if sio.connected:
+                        try:
+                            sio.emit('control_output', control_output)
+                        except Exception as e:
+                            self.logger.error("Greška pri slanju control_output: %s", e)
+                    # Nakon uspešnog slanja izlazimo iz petlje
+                    else:
+                        self.logger.error("Socket.IO nije konektovan, preskačem slanje")
 
         return output_frame, control_output
 

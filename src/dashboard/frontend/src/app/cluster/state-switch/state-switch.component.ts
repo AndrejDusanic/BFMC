@@ -215,7 +215,7 @@ deactivateAutoControl(): void {
       this.webSocketService.sendMessageToFlask(`{"Name": "AutoMode", "Value": "true"}`);
       setInterval(() => {
         this.activateAutoControl();
-      }, 100); // Runs every 300ms
+      }, 200); // Runs every 300ms
 
       //this.activateAutoControl();
      // setInterval(this.activateAutoControl,1000);

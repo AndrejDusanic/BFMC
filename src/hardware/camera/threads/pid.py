@@ -33,7 +33,7 @@ def send_periodic_updates():
 
         socketio.emit('message_about_speed', {"speed": str(speed)})
         socketio.emit('message_about_steering_angle', {"steer": str(steer)})
-        socketio.sleep(0.1)  # Adjust the interval as needed (e.g., every 1 second)
+        socketio.sleep(0.2)  # Adjust the interval as needed (e.g., every 1 second)
 
 
 

@@ -19,7 +19,7 @@ PID_PID=$!
 cleanup() {
     echo "Terminating main.py (PID: $MAIN_PID)..."
     kill $MAIN_PID 2>/dev/null
-    sleep 10  # Optional: give it a moment to shut down gracefully
+    sleep 5  # Optional: give it a moment to shut down gracefully
     echo "Terminating pid.py (PID: $PID_PID)..."
     kill $PID_PID 2>/dev/null
     exit 0
@@ -27,6 +27,27 @@ cleanup() {
 
 # Trap SIGINT (Ctrl+C) and SIGTERM to trigger the cleanup function
 trap cleanup SIGINT SIGTERM
+
+# Function to detect keypress
+keypress_listener() {
+    # Save current terminal settings
+    old_tty_settings=$(stty -g)
+    # Disable canonical mode and echo
+    stty -icanon -echo
+    while true; do
+        key=$(dd bs=1 count=1 2>/dev/null)
+        if [[ "$key" == "M" || "$key" == "m" ]]; then
+            echo -e "\nM key pressed! Stopping processes..."
+            break
+        fi
+    done
+    # Restore original terminal settings
+    stty "$old_tty_settings"
+    cleanup
+}
+
+# Run keypress listener in the background
+keypress_listener &
 
 # Wait for both processes to finish
 wait

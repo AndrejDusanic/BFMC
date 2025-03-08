@@ -55,6 +55,7 @@ class AutoMode:
     msgType = DummyAttr("AutoControl")
 # ----------------------------------
 
+
 class FrameBuffer:
     """ Jednostavni buffer sa kapacitetom 1 koji drži frame i timestamp preuzimanja."""
     def __init__(self):
@@ -75,6 +76,58 @@ class FrameBuffer:
 
     def clear(self):
         self.event.clear()
+
+
+def filter_points(x_tmp):
+    if len(x_tmp) < 3:
+        return None
+    x_left = 0
+    x_right = 0
+    img_center = 512
+    x_left_points = []
+    x_right_points = []
+    new_tmp_left = -1
+    new_tmp_right = -1
+    ret_tmp = []
+    for x in x_tmp:
+        if x < img_center:
+            x_left+=1
+            x_left_points.append(x)
+        else:
+            x_right+=1
+            x_right_points.append(x)
+    
+    if x_left > 1:
+        new_tmp_left = np.mean(x_left_points)
+    else: 
+        if len(x_left_points)!=0:
+            new_tmp_left = x_left_points[0]
+    
+    if x_right > 1:
+        new_tmp_right = np.mean(x_right_points)
+    else:
+        if len(x_right_points)!=0:
+            new_tmp_right = x_right_points[0]
+    #print(len(x_right_points), len(x_left_points))
+    
+    ret_tmp.append(round(new_tmp_left))
+    ret_tmp.append(round(new_tmp_right))
+
+    return ret_tmp
+
+
+def road_center(x_tmp):
+    if x_tmp is None or len(x_tmp) == 0:
+        return 512 
+    x_cur = None
+    if len(x_tmp) == 2:
+            x_cur = x_tmp[0] + (x_tmp[1] - x_tmp[0])/2
+    elif len(x_tmp) == 1:
+        if (x_tmp[0] > 720):
+            x_cur = 928
+        else:
+            x_cur = x_tmp[0] 
+    return x_cur
 
 class threadCamera(ThreadWithStop):
     """Thread koji rukuje funkcionalnostima kamere."""
@@ -167,8 +220,137 @@ class threadCamera(ThreadWithStop):
         inv_gamma = 1.0 / gamma
         table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)]).astype("uint8")
         return cv2.LUT(image, table)
+    
+    
 
+    
     def process_frame(self, frame):
+        """
+        Obrada ulaznog frame-a s fokusom na ROI definisanom trapezom.
+        Ako je auto režim aktivan, računa se greška između centra slike i
+        prosečnog centra detektovanih linija, a zatim se PID kontroler poziva
+        da izračuna korektivni izlaz.
+        """
+        if frame is None:
+            self.logger.error("Primljen main frame je None.")
+            return None
+
+        resized_frame = cv2.resize(frame, (1024, 540))
+        height, width = resized_frame.shape[:2]
+
+        # Grayscale & blur
+        gray = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+
+        # Edge detection
+        edges = cv2.Canny(blurred, 200, 400)
+
+        # ROI mask
+        mask = np.zeros_like(edges)
+        roi_pts = np.array([
+            [0, height],
+            [width, height],
+            [int(2 * width / 3), int(2 * height / 3)],
+            [int(width / 3), int(2 * height / 3)]
+        ], dtype=np.int32)
+        cv2.fillPoly(mask, [roi_pts], 255)
+        roi_edges = cv2.bitwise_and(edges, mask)
+
+        # Hough Transform
+        lines = cv2.HoughLinesP(roi_edges, 1, np.pi / 180, threshold=10, minLineLength=15, maxLineGap=15)
+
+        def compute_lane_center(lane_lines):
+            """
+            Izračunavanje centra trake na osnovu detektovanih linija.
+            """
+            left_x, right_x = [], []
+            for line in lane_lines:
+                for x1, y1, x2, y2 in line:
+                    slope = (y2 - y1) / (x2 - x1 + 1e-6)
+                    if slope < -0.3:
+                        left_x.append(x2)
+                    elif slope > 0.3:
+                        right_x.append(x2)
+
+            if left_x and right_x:
+                return (np.median(left_x) + np.median(right_x)) // 2
+            elif left_x:
+                return np.median(left_x) + (width * 0.25)
+            elif right_x:
+                return np.median(right_x) - (width * 0.25)
+            else:
+                return width // 2
+
+
+        lane_lines = []
+        if lines is not None:
+            left_fit, right_fit = [], []
+            left_region = width * 0.65
+            right_region = width * 0.35
+
+            for line in lines:
+                for x1, y1, x2, y2 in line:
+                    if x1 == x2:
+                        continue  # Skip vertical lines
+
+                    slope = (y2 - y1) / (x2 - x1 + 1e-6)
+                    if abs(slope) < 0.1:
+                        continue  # Skip nearly horizontal lines
+
+                    if slope < 0 and x1 < left_region and x2 < left_region:
+                        left_fit.append((slope, y1 - slope * x1))
+                    elif slope > 0 and x1 > right_region and x2 > right_region:
+                        right_fit.append((slope, y1 - slope * x1))
+
+            def make_points(line):
+                slope, intercept = line
+                y1 = height
+                y2 = int(height * 0.5)
+                x1 = int((y1 - intercept) / slope)
+                x2 = int((y2 - intercept) / slope)
+                return [[x1, y1, x2, y2]]
+
+            if left_fit:
+                left_avg = np.average(left_fit, axis=0)
+                lane_lines.append(make_points(left_avg))
+
+            if right_fit:
+                right_avg = np.average(right_fit, axis=0)
+                lane_lines.append(make_points(right_avg))
+
+        lane_center = compute_lane_center(lane_lines)
+
+        # Ako je auto režim aktivan, obračunavamo grešku i koristimo PID kontroler
+        control_output = None
+        if auto_mode:
+            image_center = width // 2
+            error = image_center - lane_center
+            dt = 0.05  # Pretpostavljena vremenska razlika
+            pid_value = pid_controller.update(error, dt)
+            steering = max(min(pid_value, 25), -25)
+            control_output = {"steer": steering, "speed": 20}
+
+            # Dodavanje informacija na sliku
+            cv2.circle(resized_frame, (int(lane_center), height - 10), 5, (0, 0, 255), -1)
+            cv2.line(resized_frame, (image_center, height), (image_center, height - 50), (255, 0, 0), 2)
+            cv2.putText(resized_frame, f"Error: {error:.2f}", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+            cv2.putText(resized_frame, f"PID: {pid_value:.2f}", (10, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+            cv2.polylines(resized_frame, [roi_pts], isClosed=True, color=(0, 0, 255), thickness=2)
+            if lines is not None:
+                for line in lines:
+                    x1, y1, x2, y2 = line[0]
+                    cv2.line(resized_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            else:
+                self.logger.debug("Nije pronađena nijedna linija u ROI-ju.")
+            
+            
+            
+
+        return resized_frame, control_output
+  
+    def process_frame_ZUTELINIJE(self, frame):
         """
         Obrada ulaznog frame‑a s fokusom na ROI definisanom trapezom.
         Implementira detekciju saobraćajnih traka koristeći Canny edge detection i Hough transform.
@@ -206,9 +388,9 @@ class threadCamera(ThreadWithStop):
 
         # Hough Transform za detekciju linija
         lines = cv2.HoughLinesP(roi_image, 1, np.pi/180, 
-                                 threshold=10, 
-                                 minLineLength=15, 
-                                 maxLineGap=15)
+                                threshold=10, 
+                                minLineLength=15, 
+                                maxLineGap=15)
 
         lane_lines = []
         lines_kept = []
@@ -310,7 +492,7 @@ class threadCamera(ThreadWithStop):
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
                     cv2.putText(output_frame, f"PID: {pid_value:.2f}", (10, 60),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-          
+        
 
                     if control_output is not None:
                         if not self.first_emit_done:
@@ -330,7 +512,8 @@ class threadCamera(ThreadWithStop):
                         self.logger.error("Socket.IO nije konektovan, preskačem slanje")
 
         return output_frame, control_output
-
+ 
+    
     def capture_loop(self):
         """Nit koja kontinuirano preuzima frame-ove i ažurira shared buffer."""
         while self._running and self._acquisition_running.is_set():

@@ -1,8 +1,9 @@
+from enum import auto
 import cv2
 import numpy as np
 
 class PIDController:
-    def __init__(self, kp=150.0, ki=0.0, kd=0.0):
+    def __init__(self, kp=200.0, ki=0.0, kd=0.0):
         self.kp = kp
         self.ki = ki
         self.kd = kd
@@ -29,7 +30,11 @@ auto_mode = True
 def set_auto_mode(mode: bool):
     """Postavlja globalni auto_mode – kada je True, PID se koristi za automatsko upravljanje."""
     global auto_mode
-    auto_mode = mode
+    if auto_mode:
+        auto_mode = True
+    else: 
+        auto_mode = False
+    
 #------------------------------
 
 

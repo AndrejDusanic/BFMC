@@ -22,6 +22,7 @@ from src.utils.messages.allMessages import (
     Brightness,
     Contrast,
 )
+
 from src.utils.messages.messageHandlerSender import messageHandlerSender
 from src.utils.messages.messageHandlerSubscriber import messageHandlerSubscriber
 from src.templates.threadwithstop import ThreadWithStop
@@ -322,9 +323,10 @@ class threadCamera(ThreadWithStop):
 
         # Ako je auto režim aktivan, obračunavamo grešku i koristimo PID kontroler
         control_output = None
+        
         if auto_mode:
             image_center = width // 2
-            error = image_center - lane_center
+            error = lane_center - image_center
             dt = 0.05  # Pretpostavljena vremenska razlika
             pid_value = pid_controller.update(error, dt)
             steering = max(min(pid_value, 25), -25)
@@ -344,9 +346,25 @@ class threadCamera(ThreadWithStop):
                     cv2.line(resized_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
             else:
                 self.logger.debug("Nije pronađena nijedna linija u ROI-ju.")
+            cv2.putText(resized_frame, f"CONTROL: {control_output}", (10, 90),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 3)
             
-            
-            
+            if control_output is not None:
+                if not self.first_emit_done:
+                    elapsed = time.time() - self.start_time
+                    if elapsed < 20:
+                        wait_time = 20 - elapsed
+                        self.logger.info(f"Čekam {wait_time:.2f} sekundi pre prvog slanja control_output")
+                        time.sleep(wait_time)
+                        self.first_emit_done = True
+            if sio.connected:
+                try:
+                    sio.emit('control_output', control_output)
+                except Exception as e:
+                    self.logger.error("Greška pri slanju control_output: %s", e)
+            # Nakon uspešnog slanja izlazimo iz petlje
+            else:
+                self.logger.error("Socket.IO nije konektovan, preskačem slanje")
 
         return resized_frame, control_output
   
@@ -595,7 +613,7 @@ class threadCamera(ThreadWithStop):
             if control is not None:
                 if USE_FIXED_COMMAND:
                     # Koristimo fiksnu komandu: upravljanje sa nulom na volanu i brzinom 50
-                    control = {"steer": 0, "speed": 50}
+                    control = {"steer": 0, "speed": 5}
                     # self.logger.info("Using fixed command: %s", control)
                 else:
                     self.logger.info("Computed auto command: %s", control)

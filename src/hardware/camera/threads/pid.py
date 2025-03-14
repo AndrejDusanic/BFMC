@@ -70,6 +70,22 @@ def handle_control_output(data):
 def handle_message(data):
     print(data)
 
+
+# @socketio.on('TOGGLE')
+# def handle_message(data):
+#     print("Primljeni podaci:", data)
+    
+#     # Preuzimamo vrednost iz data, pretpostavljamo da je data boolean (True ili False)
+#     trigger_lane_detection = data.get('triggerLaneDetection', False)
+
+#     if trigger_lane_detection:
+#         print("Pokrećemo detekciju trake...")
+#         self.processing_loop_lane_detection_thread.start()
+#     else:
+#         print("Pokrećemo detekciju saobraćajnih znakova...")
+#         self.processing_loop_sign_detection_thread.start()
+
+
 @socketio.on("debbuging_message")
 def handle_debbuging_message(data):
     print(data)

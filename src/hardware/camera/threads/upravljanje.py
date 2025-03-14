@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 
 class PIDController:
-    def __init__(self, kp=200.0, ki=0.0, kd=0.0):
+    def __init__(self, kp=250.0, ki=0.0, kd=0.0):
         self.kp = kp
         self.ki = ki
         self.kd = kd

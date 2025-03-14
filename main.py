@@ -137,7 +137,7 @@ def start_processes(processes):
                 logger.warning(f"Could not set affinity/priority for Nucleo process: {e}")
         elif isinstance(proc, processDashboard):
             try:
-               #os.sched_setaffinity(proc.pid, {3})
+                #os.sched_setaffinity(proc.pid, {3})
                 logger.info(f"Dasboart init started")
             except Exception as e:
                 logger.warning(f"Could not set affinity for dashboard process: {e}")

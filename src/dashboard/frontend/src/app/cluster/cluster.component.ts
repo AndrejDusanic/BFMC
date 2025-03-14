@@ -26,7 +26,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import { Component, Input, ViewChild } from '@angular/core';
+import { Component, Input, ViewChild,CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { WebSocketService} from '../webSocket/web-socket.service'
 
@@ -42,8 +42,9 @@ import { LiveCameraComponent } from './live-camera/live-camera.component';
 import { WarningLightComponent } from './warning-light/warning-light.component';
 import { HardwareDataComponent} from './hardware-data/hardware-data.component';
 import { RecordComponent} from './record/record.component';
-import { TimeSpeedSteerComponent} from './time-speed-steer/time-speed-steer.component'
-import { SideMarkerComponent } from './side-marker/side-marker.component'
+import { TimeSpeedSteerComponent} from './time-speed-steer/time-speed-steer.component';
+import { SideMarkerComponent } from './side-marker/side-marker.component';
+import { ToggleButtonComponent } from './toggle-button/toggle-button.component';
 import { CommonModule } from '@angular/common';
 @Component({
   selector: 'app-cluster',
@@ -54,7 +55,8 @@ import { CommonModule } from '@angular/common';
             WarningLightComponent, HardwareDataComponent, RecordComponent,
             TimeSpeedSteerComponent, SideMarkerComponent, CommonModule],
   templateUrl: './cluster.component.html',
-  styleUrl: './cluster.component.css'
+  styleUrl: './cluster.component.css',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA]
 })
 export class ClusterComponent {
   @Input() cursorRotation: number = 0;
